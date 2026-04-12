@@ -1,0 +1,283 @@
+# ==============================================================================
+
+# ==============================================================================
+# MCIA — Microservice Change Impact Analyzer
+# docker-compose.yml — Full production-style orchestration
+# ==============================================================================
+
+x-backend-common: &backend-common
+  restart: unless-stopped
+  networks:
+    - mcia-network
+
+services:
+
+  # ============================================================================
+  # TIER 1: Infrastructure
+  # ============================================================================
+
+  postgres:
+    <<: *backend-common
+    image: postgres:15-alpine
+    container_name: mcia-postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-dbs.sql:/docker-entrypoint-initdb.d/init-dbs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rabbitmq:
+    <<: *backend-common
+    image: rabbitmq:3.12-management-alpine
+    container_name: mcia-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI → http://localhost:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q status || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ============================================================================
+  # TIER 2: Core Services (no inter-service HTTP deps)
+  # ============================================================================
+
+  auth-service:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/auth-service/Dockerfile
+    container_name: mcia-auth
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://user:password@postgres:5432/auth_db?schema=public
+      JWT_SECRET: ${JWT_SECRET:-mcia-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  service-registry-service:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/service-registry-service/Dockerfile
+    container_name: mcia-registry
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgresql://user:password@postgres:5432/registry_db?schema=public
+      NODE_ENV: production
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ============================================================================
+  # TIER 3: Domain Services
+  # ============================================================================
+
+  dependency-mapping-service:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/dependency-mapping-service/Dockerfile
+    container_name: mcia-dependency
+    environment:
+      PORT: 3003
+      DATABASE_URL: postgresql://user:password@postgres:5432/dependency_db?schema=public
+      NODE_ENV: production
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  change-request-service:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/change-request-service/Dockerfile
+    container_name: mcia-changes
+    environment:
+      PORT: 3004
+      DATABASE_URL: postgresql://user:password@postgres:5432/change_db?schema=public
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      NODE_ENV: production
+    ports:
+      - "3004:3004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  impact-analysis-service:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/impact-analysis-service/Dockerfile
+    container_name: mcia-impact
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgresql://user:password@postgres:5432/impact_db?schema=public
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      DEPENDENCY_SERVICE_URL: http://dependency-mapping-service:3003
+      REGISTRY_SERVICE_URL: http://service-registry-service:3002
+      NODE_ENV: production
+    ports:
+      - "3005:3005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      dependency-mapping-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  notification-service:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/notification-service/Dockerfile
+    container_name: mcia-notifications
+    environment:
+      PORT: 3006
+      DATABASE_URL: postgresql://user:password@postgres:5432/notification_db?schema=public
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      NODE_ENV: production
+    ports:
+      - "3006:3006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3006/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  # ============================================================================
+  # TIER 4: API Gateway
+  # ============================================================================
+
+  api-gateway:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    container_name: mcia-gateway
+    environment:
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-mcia-super-secret-jwt-key-change-in-production}
+      AUTH_SERVICE_URL: http://auth-service:3001
+      REGISTRY_SERVICE_URL: http://service-registry-service:3002
+      DEPENDENCY_SERVICE_URL: http://dependency-mapping-service:3003
+      CHANGE_SERVICE_URL: http://change-request-service:3004
+      IMPACT_SERVICE_URL: http://impact-analysis-service:3005
+      NOTIFICATION_SERVICE_URL: http://notification-service:3006
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      service-registry-service:
+        condition: service_healthy
+      dependency-mapping-service:
+        condition: service_healthy
+      change-request-service:
+        condition: service_healthy
+      impact-analysis-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ============================================================================
+  # TIER 5: Frontend
+  # ============================================================================
+
+  frontend:
+    <<: *backend-common
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: mcia-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+
+# ==============================================================================
+# Volumes & Networks
+# ==============================================================================
+
+volumes:
+  postgres-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+
+networks:
+  mcia-network:
+    driver: bridge

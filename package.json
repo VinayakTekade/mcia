@@ -1,0 +1,22 @@
+{
+  "name": "microservice-change-impact-analyzer",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "dev:gateway": "npm run dev --workspace=@mcia/api-gateway",
+    "dev:auth": "npm run dev --workspace=@mcia/auth-service",
+    "dev:registry": "npm run dev --workspace=@mcia/service-registry-service",
+    "dev:mapping": "npm run dev --workspace=@mcia/dependency-mapping-service",
+    "dev:changes": "npm run dev --workspace=@mcia/change-request-service",
+    "dev:impact": "npm run dev --workspace=@mcia/impact-analysis-service",
+    "dev:notifications": "npm run dev --workspace=@mcia/notification-service",
+    "build:all": "npm run build --workspaces --if-present",
+    "test:all": "npm run test --workspaces --if-present",
+    "services:up": "docker-compose up -d",
+    "services:down": "docker-compose down"
+  }
+}
