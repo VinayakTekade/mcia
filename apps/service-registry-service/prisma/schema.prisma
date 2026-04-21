@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CommType {
+  REST
+  GRPC
+  GRAPHQL
+  ASYNC_EVENT
+}
+
+enum Criticality {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Microservice {
+  id                String             @id @default(uuid())
+  name              String             @unique
+  ownerTeam         String
+  repositoryUrl     String?
+  currentVersion    String             @default("1.0.0")
+  communicationType CommType           @default(REST)
+  criticalityLevel  Criticality        @default(MEDIUM)
+  description       String?
+  endpoints         EndpointMetadata[]
+  createdBy         String?            // Audit field (userId)
+  updatedBy         String?            // Audit field (userId)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model EndpointMetadata {
+  id             String       @id @default(uuid())
+  serviceId      String
+  service        Microservice @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  method         String
+  path           String
+  version        String       @default("v1")
+  visibility     String       @default("INTERNAL") // INTERNAL, PUBLIC
+  isDeprecated   Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([serviceId, method, path, version])
+}
