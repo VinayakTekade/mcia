@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DependencyType {
+  REST
+  GRPC
+  EVENT_DRIVEN
+  QUEUE_BASED
+}
+
+model Dependency {
+  id                   String         @id @default(uuid())
+  sourceServiceId      String         // The service making the call
+  targetServiceId      String         // The service receiving the call
+  dependencyType       DependencyType @default(REST)
+  description          String?
+  contractReference    String?        // URL or path to Swagger/AsyncAPI contract
+  isCritical           Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([sourceServiceId, targetServiceId])
+}
