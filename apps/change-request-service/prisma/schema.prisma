@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ChangeType {
+  ENDPOINT_REMOVAL
+  CONTRACT_CHANGE
+  SCHEMA_UPDATE
+  VERSION_BUMP
+  DEPENDENCY_REMOVAL
+  DEPENDENCY_ADDITION
+}
+
+enum ChangeStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_REVISION
+}
+
+model ChangeRequest {
+  id              String        @id @default(uuid())
+  title           String
+  description     String
+  targetServiceId String
+  changeType      ChangeType
+  status          ChangeStatus  @default(DRAFT)
+  authorId        String
+  reviewerId      String?
+  comments        ReviewComment[]
+  blastRadius     Int?          // Calculated later by impact service
+  impactAnalysis  Json?         // Stores the detailed async impact report
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model ReviewComment {
+  id              String        @id @default(uuid())
+  changeRequestId String
+  changeRequest   ChangeRequest @relation(fields: [changeRequestId], references: [id], onDelete: Cascade)
+  authorId        String        // The user ID who made the comment
+  content         String
+  createdAt       DateTime      @default(now())
+}

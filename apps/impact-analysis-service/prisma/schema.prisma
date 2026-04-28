@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ImpactReport {
+  id               String   @id @default(uuid())
+  changeRequestId  String   @unique
+  targetServiceId  String
+  changeType       String
+  directImpacts    String[] // Array of service IDs
+  indirectImpacts  String[] // Array of service IDs
+  affectedServices Int
+  affectedContracts Int
+  blastRadius      Int
+  riskScore        Int
+  riskLevel        String   // LOW, MEDIUM, HIGH, CRITICAL
+  explanation      Json     // Array of risk factors explaining the score
+  createdAt        DateTime @default(now())
+}
