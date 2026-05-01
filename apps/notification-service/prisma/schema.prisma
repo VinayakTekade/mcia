@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum NotificationType {
+  CHANGE_SUBMITTED
+  IMPACT_REPORT_GENERATED
+  REVIEW_REQUESTED
+  CHANGE_APPROVED
+  CHANGE_REJECTED
+}
+
+model Notification {
+  id              String           @id @default(uuid())
+  userId          String           // Recipient of this notification
+  type            NotificationType
+  title           String
+  body            String
+  resourceId      String?          // e.g., changeRequestId
+  isRead          Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
